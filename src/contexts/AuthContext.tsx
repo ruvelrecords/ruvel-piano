@@ -32,11 +32,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setStorage('auth', DEFAULT_AUTH);
     }
 
-    // Credential migration — patch any stored students missing username/pin.
-    // Must live here (AuthContext) because /login only has AuthContext, not AppContext.
+    // Seed / migration — must live here (AuthContext) because /login only has
+    // AuthContext, not AppContext. Two cases:
+    // 1. Empty localStorage (new device / Vercel deploy) → seed everything.
+    // 2. Students exist but missing username/pin → patch them.
     const seedData = createSeedData();
     const storedStudents = getStorage<Array<{ id: string; username?: string; pin?: string }>>('students', []);
-    if (storedStudents.length > 0) {
+
+    if (storedStudents.length === 0) {
+      // Fresh start — seed students, classes, payments and activity
+      setStorage('students', seedData.students);
+      setStorage('classes', seedData.classes);
+      setStorage('payments', seedData.payments);
+      setStorage('activity', seedData.activity);
+    } else {
+      // Patch any student missing username/pin
       let patched = false;
       const patchedStudents = storedStudents.map((s) => {
         if (!s.username || !s.pin) {
