@@ -3,10 +3,11 @@
 import { useState } from 'react';
 import { useApp } from '@/contexts/AppContext';
 import { exportAllData, importAllData, clearAllStorage, getStorage, setStorage } from '@/lib/storage';
-import { Settings, Download, Upload, AlertTriangle, Save, RefreshCw, Lock, Users, Eye, EyeOff } from 'lucide-react';
+import { Settings, Download, Upload, AlertTriangle, Save, RefreshCw, Lock, Users, Eye, EyeOff, Cloud, CloudOff } from 'lucide-react';
 import Modal from '@/components/ui/Modal';
 import { useToast } from '@/contexts/ToastContext';
 import { AuthStore } from '@/lib/types';
+import { isCloudEnabled, cloudResync } from '@/lib/cloud';
 
 const DEFAULT_AUTH: AuthStore = { teacher: { username: 'teacher', password: 'ruvel2024' } };
 
@@ -126,6 +127,50 @@ export default function SettingsPage() {
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-white">Settings</h1>
         <p className="text-[#888888] text-sm mt-0.5">Configure your studio preferences</p>
+      </div>
+
+      {/* Sync status */}
+      <div className={sectionCls}>
+        <h2 className="font-semibold text-white flex items-center gap-2 mb-3">
+          {isCloudEnabled() ? <Cloud className="w-4 h-4 text-emerald-400" /> : <CloudOff className="w-4 h-4 text-[#888]" />}
+          Sincronización entre dispositivos
+        </h2>
+        {isCloudEnabled() ? (
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <span className="w-2 h-2 rounded-full bg-emerald-400" />
+              <p className="text-sm text-emerald-300 font-medium">Activa</p>
+            </div>
+            <p className="text-xs text-[#888] mb-3">
+              Tu celular, iPad y desktop están conectados. Los cambios se sincronizan automáticamente.
+              La app vuelve a buscar datos cada vez que entras a la pestaña.
+            </p>
+            <button
+              onClick={async () => {
+                await cloudResync();
+                showToast('Sincronización forzada — recarga la página para ver cambios', 'success');
+              }}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium bg-[#1a1a1a] border border-[#2a2a2a] text-white hover:border-[#3a3a3a]"
+            >
+              <RefreshCw className="w-3.5 h-3.5" /> Forzar sincronización ahora
+            </button>
+          </div>
+        ) : (
+          <div>
+            <div className="flex items-center gap-2 mb-2">
+              <span className="w-2 h-2 rounded-full bg-[#888]" />
+              <p className="text-sm text-[#888] font-medium">Desactivada — modo local</p>
+            </div>
+            <p className="text-xs text-[#888] mb-2">
+              La app está funcionando solo con localStorage de este dispositivo. Para que los cambios
+              se sincronicen entre celular, iPad y desktop, sigue las instrucciones en{' '}
+              <code className="text-[#C9A84C]">SUPABASE_SETUP.md</code> (5 min, gratis).
+            </p>
+            <p className="text-xs text-[#666]">
+              Tip: el archivo está en la raíz del proyecto en GitHub.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Studio settings */}

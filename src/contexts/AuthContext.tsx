@@ -4,6 +4,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import { AppSession, AuthStore } from '@/lib/types';
 import { getStorage, setStorage, removeStorage } from '@/lib/storage';
 import { createSeedData } from '@/lib/seedData';
+import { ensureCloudBootstrap } from '@/lib/cloud';
 
 interface AuthContextValue {
   session: AppSession | null;
@@ -26,45 +27,57 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Ensure auth store exists
-    const auth = getStorage<AuthStore>('auth', DEFAULT_AUTH);
-    if (!auth.teacher) {
-      setStorage('auth', DEFAULT_AUTH);
-    }
+    let cancelled = false;
 
-    // Seed / migration — must live here (AuthContext) because /login only has
-    // AuthContext, not AppContext. Two cases:
-    // 1. Empty localStorage (new device / Vercel deploy) → seed everything.
-    // 2. Students exist but missing username/pin → patch them.
-    const seedData = createSeedData();
-    const storedStudents = getStorage<Array<{ id: string; username?: string; pin?: string }>>('students', []);
+    (async () => {
+      // PASO 1: Sincronizar con la nube ANTES de leer nada de localStorage
+      // (si la nube está configurada). Esto asegura que celular/desktop/iPad
+      // siempre arranquen con los mismos datos.
+      await ensureCloudBootstrap();
+      if (cancelled) return;
 
-    if (storedStudents.length === 0) {
-      // Fresh start — seed students, classes, payments and activity
-      setStorage('students', seedData.students);
-      setStorage('classes', seedData.classes);
-      setStorage('payments', seedData.payments);
-      setStorage('activity', seedData.activity);
-    } else {
-      // Patch any student missing username/pin
-      let patched = false;
-      const patchedStudents = storedStudents.map((s) => {
-        if (!s.username || !s.pin) {
-          const seedMatch = seedData.students.find((ss) => ss.id === s.id);
-          if (seedMatch && (seedMatch.username || seedMatch.pin)) {
-            patched = true;
-            return { ...s, username: seedMatch.username, pin: seedMatch.pin };
+      // PASO 2: Asegurar que el auth store existe
+      const auth = getStorage<AuthStore>('auth', DEFAULT_AUTH);
+      if (!auth.teacher) {
+        setStorage('auth', DEFAULT_AUTH);
+      }
+
+      // PASO 3: Seed / migración — debe vivir aquí (AuthContext) porque /login
+      // solo tiene AuthContext, no AppContext.
+      const seedData = createSeedData();
+      const storedStudents = getStorage<Array<{ id: string; username?: string; pin?: string }>>('students', []);
+
+      if (storedStudents.length === 0) {
+        // Fresh start — sembrar todo
+        setStorage('students', seedData.students);
+        setStorage('classes', seedData.classes);
+        setStorage('payments', seedData.payments);
+        setStorage('activity', seedData.activity);
+      } else {
+        // Parchar estudiantes que les falte username/pin
+        let patched = false;
+        const patchedStudents = storedStudents.map((s) => {
+          if (!s.username || !s.pin) {
+            const seedMatch = seedData.students.find((ss) => ss.id === s.id);
+            if (seedMatch && (seedMatch.username || seedMatch.pin)) {
+              patched = true;
+              return { ...s, username: seedMatch.username, pin: seedMatch.pin };
+            }
           }
-        }
-        return s;
-      });
-      if (patched) setStorage('students', patchedStudents);
-    }
+          return s;
+        });
+        if (patched) setStorage('students', patchedStudents);
+      }
 
-    // Load existing session
-    const existing = getStorage<AppSession | null>('session', null);
-    setSession(existing);
-    setIsLoading(false);
+      // PASO 4: Cargar sesión existente
+      const existing = getStorage<AppSession | null>('session', null);
+      setSession(existing);
+      setIsLoading(false);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const login = useCallback((username: string, credential: string): { success: boolean; message: string } => {

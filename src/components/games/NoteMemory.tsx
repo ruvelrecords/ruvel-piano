@@ -38,7 +38,10 @@ function buildDeck(): Card[] {
   return shuffle(cards);
 }
 
-const yFor = (step: number) => 60 - step * 6;
+// En notación musical, notas adyacentes (línea→espacio→línea) están a media
+// distancia de línea. Las 5 líneas del pentagrama están en y = 36,42,48,54,60
+// (6 apart). Cada paso diatónico = 3 (mitad).
+const yFor = (step: number) => 60 - step * 3;
 
 export default function NoteMemory({ accent = '#C9A84C' }: { accent?: string }) {
   const [deck, setDeck] = useState<Card[]>(() => buildDeck());

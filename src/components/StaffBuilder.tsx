@@ -71,8 +71,11 @@ export default function StaffBuilder({ accent = '#C9A84C' }: { accent?: string }
   const trebleTopY = 20;
   const bassTopY = isGrand ? 180 : 20;
 
-  const handleStaffClick = (e: React.MouseEvent<SVGElement>, staff: 'treble' | 'bass') => {
-    const svgRect = e.currentTarget.getBoundingClientRect();
+  const handleStaffClick = (e: React.MouseEvent<SVGRectElement>, staff: 'treble' | 'bass') => {
+    // IMPORTANTE: usamos el bounding rect del <svg> padre, no del <rect>
+    const svg = e.currentTarget.ownerSVGElement;
+    if (!svg) return;
+    const svgRect = svg.getBoundingClientRect();
     const scaleY = svgHeight / svgRect.height;
     const y = (e.clientY - svgRect.top) * scaleY;
 

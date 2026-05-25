@@ -1,3 +1,5 @@
+import { cloudPush, isCloudEnabled, SYNCED_KEYS } from './cloud';
+
 const PREFIX = 'ruvel_';
 
 export function getStorage<T>(key: string, fallback: T): T {
@@ -10,12 +12,26 @@ export function getStorage<T>(key: string, fallback: T): T {
   }
 }
 
+// Debounced cloud-push timers per key — evita spammar Supabase con cada teclazo
+const pushTimers: Record<string, ReturnType<typeof setTimeout>> = {};
+const PUSH_DEBOUNCE_MS = 800;
+
 export function setStorage<T>(key: string, value: T): void {
   if (typeof window === 'undefined') return;
   try {
     localStorage.setItem(PREFIX + key, JSON.stringify(value));
   } catch {
     // localStorage full
+  }
+
+  // También empujar a la nube si está configurada y la key se sincroniza
+  if (isCloudEnabled() && SYNCED_KEYS.includes(key)) {
+    if (pushTimers[key]) clearTimeout(pushTimers[key]);
+    pushTimers[key] = setTimeout(() => {
+      cloudPush(key, value).catch(() => {
+        /* silent */
+      });
+    }, PUSH_DEBOUNCE_MS);
   }
 }
 

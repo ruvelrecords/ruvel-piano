@@ -6,6 +6,7 @@ import { getStorage, setStorage } from '@/lib/storage';
 import { RUVEL_KEYS } from '@/lib/constants';
 import { generateId } from '@/lib/utils';
 import { createSeedData } from '@/lib/seedData';
+import { ensureCloudBootstrap, cloudResync, isCloudEnabled } from '@/lib/cloud';
 import { useToast } from './ToastContext';
 
 interface AppContextValue {
@@ -78,55 +79,92 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [activity, setActivity] = useState<ActivityEntry[]>([]);
   const [initialized, setInitialized] = useState(false);
 
-  // Load from localStorage on mount
+  // Load from localStorage on mount (después de sync con la nube)
   useEffect(() => {
-    const seeded = getStorage<boolean>('initialized', false);
-    if (!seeded) {
-      const seed = createSeedData();
-      setStudents(seed.students);
-      setClasses(seed.classes);
-      setPayments(seed.payments);
-      setActivity(seed.activity);
-      setReviews([]);
-      setMedia([]);
-      setSettings(DEFAULT_SETTINGS);
-      setStorage('students', seed.students);
-      setStorage('classes', seed.classes);
-      setStorage('payments', seed.payments);
-      setStorage('reviews', []);
-      setStorage('media', []);
-      setStorage('settings', DEFAULT_SETTINGS);
-      setStorage('activity', seed.activity);
-      setStorage('initialized', true);
-    } else {
-      // Load existing data
-      let loadedStudents = getStorage<Student[]>('students', []);
+    let cancelled = false;
 
-      // Migration: patch students that are missing username/pin credentials
-      // This happens when old seed data was loaded before credentials were added
-      const seed = createSeedData();
-      let needsPatch = false;
-      loadedStudents = loadedStudents.map((s) => {
-        if (!s.username || !s.pin) {
-          const seedMatch = seed.students.find((ss) => ss.id === s.id);
-          if (seedMatch && (seedMatch.username || seedMatch.pin)) {
-            needsPatch = true;
-            return { ...s, username: seedMatch.username, pin: seedMatch.pin };
+    (async () => {
+      // Esperar a que el bootstrap de la nube termine (AuthContext también lo
+      // llama, pero como retorna la misma promesa, esto solo espera).
+      await ensureCloudBootstrap();
+      if (cancelled) return;
+
+      const seeded = getStorage<boolean>('initialized', false);
+      if (!seeded) {
+        const seed = createSeedData();
+        setStudents(seed.students);
+        setClasses(seed.classes);
+        setPayments(seed.payments);
+        setActivity(seed.activity);
+        setReviews([]);
+        setMedia([]);
+        setSettings(DEFAULT_SETTINGS);
+        setStorage('students', seed.students);
+        setStorage('classes', seed.classes);
+        setStorage('payments', seed.payments);
+        setStorage('reviews', []);
+        setStorage('media', []);
+        setStorage('settings', DEFAULT_SETTINGS);
+        setStorage('activity', seed.activity);
+        setStorage('initialized', true);
+      } else {
+        // Load existing data (ya con datos frescos de la nube si aplica)
+        let loadedStudents = getStorage<Student[]>('students', []);
+
+        // Migration: patch students missing username/pin
+        const seed = createSeedData();
+        let needsPatch = false;
+        loadedStudents = loadedStudents.map((s) => {
+          if (!s.username || !s.pin) {
+            const seedMatch = seed.students.find((ss) => ss.id === s.id);
+            if (seedMatch && (seedMatch.username || seedMatch.pin)) {
+              needsPatch = true;
+              return { ...s, username: seedMatch.username, pin: seedMatch.pin };
+            }
           }
-        }
-        return s;
-      });
-      if (needsPatch) setStorage('students', loadedStudents);
+          return s;
+        });
+        if (needsPatch) setStorage('students', loadedStudents);
 
-      setStudents(loadedStudents);
-      setClasses(getStorage<ClassEntry[]>('classes', []));
-      setPayments(getStorage<Payment[]>('payments', []));
-      setReviews(getStorage<Review[]>('reviews', []));
-      setMedia(getStorage<MediaItem[]>('media', []));
-      setSettings(getStorage<Settings>('settings', DEFAULT_SETTINGS));
-      setActivity(getStorage<ActivityEntry[]>('activity', []));
-    }
-    setInitialized(true);
+        setStudents(loadedStudents);
+        setClasses(getStorage<ClassEntry[]>('classes', []));
+        setPayments(getStorage<Payment[]>('payments', []));
+        setReviews(getStorage<Review[]>('reviews', []));
+        setMedia(getStorage<MediaItem[]>('media', []));
+        setSettings(getStorage<Settings>('settings', DEFAULT_SETTINGS));
+        setActivity(getStorage<ActivityEntry[]>('activity', []));
+      }
+      setInitialized(true);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  // ─── Re-sync on focus ──────────────────────────────────────────────
+  // Cuando el usuario vuelve a la pestaña / desbloquea el celular, jala los
+  // datos más recientes de la nube y actualiza el estado de React.
+  useEffect(() => {
+    if (!isCloudEnabled()) return;
+
+    const handleFocus = async () => {
+      try {
+        const cloud = await cloudResync();
+        if (cloud.students) setStudents(cloud.students as Student[]);
+        if (cloud.classes) setClasses(cloud.classes as ClassEntry[]);
+        if (cloud.payments) setPayments(cloud.payments as Payment[]);
+        if (cloud.activity) setActivity(cloud.activity as ActivityEntry[]);
+        if (cloud.reviews) setReviews(cloud.reviews as Review[]);
+        if (cloud.media) setMedia(cloud.media as MediaItem[]);
+        if (cloud.settings) setSettings(cloud.settings as Settings);
+      } catch {
+        /* silent */
+      }
+    };
+
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
   }, []);
 
   const logActivity = useCallback((message: string, type: ActivityEntry['type']) => {

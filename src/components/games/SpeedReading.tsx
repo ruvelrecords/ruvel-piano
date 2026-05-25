@@ -20,7 +20,8 @@ const NOTES = [
 ];
 const NAMES = ['Do', 'Re', 'Mi', 'Fa', 'Sol', 'La', 'Si'];
 
-const yFor = (step: number) => 80 - step * 7;
+// 5 líneas a y = 52, 59, 66, 73, 80 (7 apart). Cada paso diatónico = 3.5.
+const yFor = (step: number) => 80 - step * 3.5;
 
 export default function SpeedReading({ accent = '#C9A84C' }: { accent?: string }) {
   const [phase, setPhase] = useState<'idle' | 'playing' | 'gameover'>('idle');
