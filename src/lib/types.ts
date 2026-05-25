@@ -40,6 +40,19 @@ export interface Student {
   schedule?: string;
 }
 
+export type MaterialKind = 'video' | 'pdf' | 'sheet' | 'image' | 'link' | 'audio';
+
+export interface ClassMaterial {
+  id: string;
+  kind: MaterialKind;
+  label: string;
+  // Either a URL (YouTube / Drive / etc.) OR a base64 data URI (for small images).
+  url?: string;
+  dataUri?: string;
+  notes?: string;
+  createdAt: string;
+}
+
 export interface ClassEntry {
   id: string;
   studentId: string;
@@ -60,6 +73,8 @@ export interface ClassEntry {
   achievement?: string;
   needsWork?: string;
   sessionRating?: 1 | 2 | 3 | 4 | 5;
+  // Material assigned to this specific class (videos, PDFs, sheets, links)
+  materials?: ClassMaterial[];
 }
 
 export interface Payment {

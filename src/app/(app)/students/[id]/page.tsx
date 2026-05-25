@@ -7,6 +7,7 @@ import { MODULES, RUVEL_KEYS, MOTIVATIONAL_QUOTES } from '@/lib/constants';
 import { formatDate, formatAUD, getInitials, getAgeGroupColor, getLevelBadge, getAgeGroupBg, getStatusBadge, formatTime12h } from '@/lib/utils';
 import { ArrowLeft, Music, Star, Trash2, Edit2, X, ChevronDown, ChevronUp, Copy, Check, MessageCircle, Pencil, Save } from 'lucide-react';
 import Modal from '@/components/ui/Modal';
+import ClassMaterialEditor from '@/components/ClassMaterialEditor';
 import { AgeGroup, Level, ClassEntry, ClassStatus } from '@/lib/types';
 import { getStorage } from '@/lib/storage';
 import { QuizResultsStore } from '@/lib/quizzes';
@@ -59,10 +60,12 @@ export default function StudentProfilePage() {
     date: string; time: string; duration: string; status: ClassStatus; module: string;
     whatWeWorkedOn: string; homeworkAssigned: string; teacherNotes: string; nextClassFocus: string;
     achievement: string; energyLevel: string; sessionRating: string;
+    materials: import('@/lib/types').ClassMaterial[];
   }>({
     date: '', time: '', duration: '', status: 'Completed', module: '1',
     whatWeWorkedOn: '', homeworkAssigned: '', teacherNotes: '', nextClassFocus: '',
     achievement: '', energyLevel: '', sessionRating: '',
+    materials: [],
   });
 
   useEffect(() => {
@@ -155,6 +158,7 @@ export default function StudentProfilePage() {
       achievement: c.achievement || '',
       energyLevel: c.energyLevel || '',
       sessionRating: String(c.sessionRating || ''),
+      materials: c.materials || [],
     });
     setShowClassEditModal(true);
   };
@@ -174,6 +178,7 @@ export default function StudentProfilePage() {
       achievement: classEditForm.achievement,
       energyLevel: classEditForm.energyLevel as 'Low' | 'Medium' | 'High' | undefined,
       sessionRating: classEditForm.sessionRating ? parseInt(classEditForm.sessionRating) as 1|2|3|4|5 : undefined,
+      materials: classEditForm.materials,
     });
     setShowClassEditModal(false);
     setEditingClassId(null);
@@ -1038,6 +1043,15 @@ Keep practicing! 🔑 RÜVEL Piano Method`;
           <div>
             <label className={labelCls}>Teacher notes (private)</label>
             <textarea className={`${inputCls} h-16 resize-none`} value={classEditForm.teacherNotes} onChange={(e) => setClassEditForm({ ...classEditForm, teacherNotes: e.target.value })} placeholder="Private notes (not shown to student)..." />
+          </div>
+          <div>
+            <label className={labelCls}>📎 Material multimedia (video / PDF / partitura / imagen)</label>
+            <p className="text-[10px] text-[#666] mb-2">El estudiante lo ve en su portal, en la sección Clases y Tarea.</p>
+            <ClassMaterialEditor
+              materials={classEditForm.materials}
+              onChange={(next) => setClassEditForm({ ...classEditForm, materials: next })}
+              accent="#C9A84C"
+            />
           </div>
         </div>
       </Modal>
