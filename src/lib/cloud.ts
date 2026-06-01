@@ -60,18 +60,6 @@ export function setLocalTs(key: string, ts: string): void {
   }
 }
 
-// Stamp any synced key that exists locally but has no timestamp yet.
-// This protects data created before timestamp-tracking existed: it gets
-// marked as "current" so the automatic cloud-pull won't silently overwrite it.
-export function stampMissingTimestamps(): void {
-  if (typeof window === 'undefined') return;
-  const now = new Date().toISOString();
-  for (const key of SYNCED_KEYS) {
-    const hasValue = localStorage.getItem(STORAGE_PREFIX + key) !== null;
-    const hasTs = localStorage.getItem(STORAGE_PREFIX + key + TS_SUFFIX) !== null;
-    if (hasValue && !hasTs) setLocalTs(key, now);
-  }
-}
 
 async function supabaseFetch(path: string, options: RequestInit = {}): Promise<Response | null> {
   if (!isCloudEnabled()) return null;
@@ -133,25 +121,36 @@ export async function cloudPush(key: string, value: unknown, ts?: string): Promi
   return !!(res && res.ok);
 }
 
-// ─── Merge cloud rows into localStorage using last-write-wins ───────────────
-// force=true  → overwrite local unconditionally (manual "download" button)
-// force=false → only overwrite a key if the cloud copy is strictly newer
-// Returns the keys/values that were actually applied so React state can update.
-function mergeCloudIntoLocal(rows: CloudRow[], force: boolean): Record<string, unknown> {
+// ─── La nube es la ÚNICA fuente de verdad ──────────────────────────────────
+// Al jalar, la nube SIEMPRE gana y sobrescribe lo local. La única excepción es
+// 'protect-recent': si este dispositivo escribió una key hace menos de 4s
+// (una edición en curso aún subiendo), NO la pisamos — evita perder un cambio
+// que el usuario acaba de hacer. El bootstrap y el botón manual usan 'force'.
+const RECENT_EDIT_MS = 4000;
+
+function mergeCloudIntoLocal(
+  rows: CloudRow[],
+  mode: 'force' | 'protect-recent'
+): Record<string, unknown> {
   const applied: Record<string, unknown> = {};
+  const now = Date.now();
   for (const row of rows) {
     if (!SYNCED_KEYS.includes(row.key)) continue;
-    const localTs = getLocalTs(row.key);
-    const cloudTs = row.updated_at ?? '';
-    const cloudWins = force || !localTs || (!!cloudTs && cloudTs > localTs);
-    if (cloudWins) {
-      try {
-        localStorage.setItem(STORAGE_PREFIX + row.key, JSON.stringify(row.value));
-        setLocalTs(row.key, cloudTs || new Date().toISOString());
-        applied[row.key] = row.value;
-      } catch {
-        /* full */
+
+    if (mode === 'protect-recent') {
+      const localTs = getLocalTs(row.key);
+      if (localTs) {
+        const age = now - Date.parse(localTs);
+        if (age >= 0 && age < RECENT_EDIT_MS) continue; // edición en curso — no pisar
       }
+    }
+
+    try {
+      localStorage.setItem(STORAGE_PREFIX + row.key, JSON.stringify(row.value));
+      setLocalTs(row.key, row.updated_at || new Date().toISOString());
+      applied[row.key] = row.value;
+    } catch {
+      /* full */
     }
   }
   return applied;
@@ -171,21 +170,17 @@ export function ensureCloudBootstrap(): Promise<void> {
 
 async function doBootstrap(): Promise<void> {
   try {
-    // CRÍTICO: marca con timestamp los datos locales existentes ANTES de
-    // tocar la nube. Así los datos viejos (creados antes del sistema de
-    // sincronización) se consideran "actuales" y NO se sobrescriben al jalar.
-    stampMissingTimestamps();
-
     const rows = await cloudPullAllRaw();
 
     if (rows.length === 0) {
-      // Nube vacía — subir lo que tenemos local (con su timestamp)
+      // Nube vacía — este es el PRIMER dispositivo. Sube lo local (semilla).
+      // Cualquier dispositivo posterior verá la nube llena y bajará de ahí.
       for (const key of SYNCED_KEYS) {
         const raw = localStorage.getItem(STORAGE_PREFIX + key);
         if (raw !== null) {
           try {
             const value = JSON.parse(raw);
-            const ts = getLocalTs(key) ?? new Date().toISOString();
+            const ts = new Date().toISOString();
             setLocalTs(key, ts);
             await cloudPush(key, value, ts);
           } catch {
@@ -194,8 +189,9 @@ async function doBootstrap(): Promise<void> {
         }
       }
     } else {
-      // Nube tiene datos — fusionar con last-write-wins (NO sobrescribir ciegamente)
-      mergeCloudIntoLocal(rows, false);
+      // Nube tiene datos — es la fuente de verdad. Sobrescribir local SIEMPRE.
+      // Esto garantiza que todos los dispositivos arranquen idénticos.
+      mergeCloudIntoLocal(rows, 'force');
     }
   } catch (e) {
     console.warn('[cloud] bootstrap failed', e);
@@ -203,18 +199,30 @@ async function doBootstrap(): Promise<void> {
 }
 
 // Re-pull from cloud (automatic — visibility change / 30s poll).
-// Uses last-write-wins so a stale cloud copy never clobbers fresh local data.
+// Cloud wins, EXCEPT for keys this device edited in the last few seconds
+// (an in-flight edit still uploading) so we never lose a fresh local change.
 // Returns only the keys that were actually updated, for React state.
 export async function cloudResync(): Promise<Record<string, unknown>> {
   const rows = await cloudPullAllRaw();
-  return mergeCloudIntoLocal(rows, false);
+  return mergeCloudIntoLocal(rows, 'protect-recent');
 }
 
 // FORCE pull — manual "Download from cloud" button. Overwrites local
 // unconditionally with whatever is in the cloud. Returns all cloud data.
 export async function cloudForcePull(): Promise<Record<string, unknown>> {
   const rows = await cloudPullAllRaw();
-  return mergeCloudIntoLocal(rows, true);
+  return mergeCloudIntoLocal(rows, 'force');
+}
+
+// Borrar TODO de la nube. Se usa al hacer "Reset all data" para que los datos
+// no vuelvan a bajar al recargar. (DELETE con un filtro que matchea todo.)
+export async function cloudClearAll(): Promise<boolean> {
+  if (!isCloudEnabled()) return false;
+  const res = await supabaseFetch('/rest/v1/app_kv?key=not.is.null', {
+    method: 'DELETE',
+    headers: { Prefer: 'return=minimal' },
+  });
+  return !!(res && res.ok);
 }
 
 // Test the connection (READ + WRITE) and return diagnostic info.

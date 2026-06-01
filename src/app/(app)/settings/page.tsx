@@ -7,7 +7,7 @@ import { Settings, Download, Upload, AlertTriangle, Save, RefreshCw, Lock, Users
 import Modal from '@/components/ui/Modal';
 import { useToast } from '@/contexts/ToastContext';
 import { AuthStore } from '@/lib/types';
-import { isCloudEnabled, cloudForcePull, cloudPushAll, cloudTest } from '@/lib/cloud';
+import { isCloudEnabled, cloudForcePull, cloudPushAll, cloudTest, cloudClearAll } from '@/lib/cloud';
 
 const DEFAULT_AUTH: AuthStore = { teacher: { username: 'teacher', password: 'ruvel2024' } };
 
@@ -82,8 +82,12 @@ export default function SettingsPage() {
     input.click();
   };
 
-  const handleReset = () => {
+  const handleReset = async () => {
     if (resetConfirmText !== 'RESET') return;
+    // Borrar también la nube, si no los datos vuelven al recargar
+    if (isCloudEnabled()) {
+      try { await cloudClearAll(); } catch { /* ignore */ }
+    }
     clearAllStorage();
     showToast('All data cleared. Reloading...', 'info');
     setTimeout(() => window.location.reload(), 1500);
