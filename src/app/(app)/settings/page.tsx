@@ -7,7 +7,7 @@ import { Settings, Download, Upload, AlertTriangle, Save, RefreshCw, Lock, Users
 import Modal from '@/components/ui/Modal';
 import { useToast } from '@/contexts/ToastContext';
 import { AuthStore } from '@/lib/types';
-import { isCloudEnabled, cloudResync } from '@/lib/cloud';
+import { isCloudEnabled, cloudResync, cloudPushAll } from '@/lib/cloud';
 
 const DEFAULT_AUTH: AuthStore = { teacher: { username: 'teacher', password: 'ruvel2024' } };
 
@@ -25,6 +25,7 @@ export default function SettingsPage() {
   });
   const [resetModal, setResetModal] = useState(false);
   const [resetConfirmText, setResetConfirmText] = useState('');
+  const [syncing, setSyncing] = useState(false);
   // Auth state
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -138,21 +139,41 @@ export default function SettingsPage() {
         {isCloudEnabled() ? (
           <div>
             <div className="flex items-center gap-2 mb-2">
-              <span className="w-2 h-2 rounded-full bg-emerald-400" />
-              <p className="text-sm text-emerald-300 font-medium">Activa</p>
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <p className="text-sm text-emerald-300 font-medium">☁️ Activa</p>
             </div>
-            <p className="text-xs text-[#888] mb-3">
-              Tu celular, iPad y desktop están conectados. Los cambios se sincronizan automáticamente.
-              La app vuelve a buscar datos cada vez que entras a la pestaña.
+            <p className="text-xs text-[#888] mb-1">
+              Tus dispositivos se sincronizan automáticamente cada 30 segundos y al volver a la pestaña.
+            </p>
+            <p className="text-xs text-[#555] mb-3 font-mono">
+              {process.env.NEXT_PUBLIC_SUPABASE_URL?.replace('https://', '').split('.')[0] ?? '—'}
+              .supabase.co
             </p>
             <button
+              disabled={syncing}
               onClick={async () => {
-                await cloudResync();
-                showToast('Sincronización forzada — recarga la página para ver cambios', 'success');
+                setSyncing(true);
+                try {
+                  // PUSH all local data first (in case any push was missed),
+                  // then PULL the latest from the cloud.
+                  const pushed = await cloudPushAll();
+                  const cloud = await cloudResync();
+                  const pulled = Object.keys(cloud).length;
+                  showToast(
+                    `Sincronizado ✓ — subidas ${pushed} claves, bajadas ${pulled}`,
+                    'success'
+                  );
+                } catch {
+                  showToast('Error al sincronizar — revisa tu conexión', 'error');
+                } finally {
+                  setSyncing(false);
+                  setTimeout(() => window.location.reload(), 800);
+                }
               }}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium bg-[#1a1a1a] border border-[#2a2a2a] text-white hover:border-[#3a3a3a]"
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium bg-[#1a1a1a] border border-[#2a2a2a] text-white hover:border-[#3a3a3a] disabled:opacity-50"
             >
-              <RefreshCw className="w-3.5 h-3.5" /> Forzar sincronización ahora
+              <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
+              {syncing ? 'Sincronizando…' : 'Forzar sincronización ahora'}
             </button>
           </div>
         ) : (

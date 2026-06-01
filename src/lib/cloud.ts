@@ -131,7 +131,7 @@ async function doBootstrap(): Promise<void> {
   }
 }
 
-// Re-pull all from cloud (used on window focus). Returns the data so the
+// Re-pull all from cloud (used on visibility change). Returns the data so the
 // caller can update React state.
 export async function cloudResync(): Promise<Record<string, unknown>> {
   const cloud = await cloudPullAll();
@@ -143,4 +143,24 @@ export async function cloudResync(): Promise<Record<string, unknown>> {
     }
   }
   return cloud;
+}
+
+// Push ALL local synced keys to the cloud at once.
+// Use this for "Force Sync" so even data that was never pushed gets uploaded.
+export async function cloudPushAll(): Promise<number> {
+  if (!isCloudEnabled()) return 0;
+  let pushed = 0;
+  for (const key of SYNCED_KEYS) {
+    const raw = localStorage.getItem(STORAGE_PREFIX + key);
+    if (raw !== null) {
+      try {
+        const value = JSON.parse(raw);
+        const ok = await cloudPush(key, value);
+        if (ok) pushed++;
+      } catch {
+        /* skip */
+      }
+    }
+  }
+  return pushed;
 }

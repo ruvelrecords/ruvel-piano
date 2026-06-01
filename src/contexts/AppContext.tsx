@@ -142,30 +142,52 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  // ─── Re-sync on focus ──────────────────────────────────────────────
-  // Cuando el usuario vuelve a la pestaña / desbloquea el celular, jala los
-  // datos más recientes de la nube y actualiza el estado de React.
+  // ─── Re-sync helper ────────────────────────────────────────────────
+  const applyCloudData = useCallback(async () => {
+    try {
+      const cloud = await cloudResync();
+      if (cloud.students) setStudents(cloud.students as Student[]);
+      if (cloud.classes) setClasses(cloud.classes as ClassEntry[]);
+      if (cloud.payments) setPayments(cloud.payments as Payment[]);
+      if (cloud.activity) setActivity(cloud.activity as ActivityEntry[]);
+      if (cloud.reviews) setReviews(cloud.reviews as Review[]);
+      if (cloud.media) setMedia(cloud.media as MediaItem[]);
+      if (cloud.settings) setSettings(cloud.settings as Settings);
+    } catch {
+      /* silent */
+    }
+  }, []);
+
+  // ─── Re-sync on visibility change (mobile-friendly) ────────────────
+  // `window.focus` doesn't fire reliably on iOS Safari/Chrome.
+  // `document.visibilitychange` fires every time the user returns to the tab.
   useEffect(() => {
     if (!isCloudEnabled()) return;
 
-    const handleFocus = async () => {
-      try {
-        const cloud = await cloudResync();
-        if (cloud.students) setStudents(cloud.students as Student[]);
-        if (cloud.classes) setClasses(cloud.classes as ClassEntry[]);
-        if (cloud.payments) setPayments(cloud.payments as Payment[]);
-        if (cloud.activity) setActivity(cloud.activity as ActivityEntry[]);
-        if (cloud.reviews) setReviews(cloud.reviews as Review[]);
-        if (cloud.media) setMedia(cloud.media as MediaItem[]);
-        if (cloud.settings) setSettings(cloud.settings as Settings);
-      } catch {
-        /* silent */
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        applyCloudData();
       }
     };
 
-    window.addEventListener('focus', handleFocus);
-    return () => window.removeEventListener('focus', handleFocus);
-  }, []);
+    // Also keep window.focus as belt-and-suspenders for desktop browsers
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('focus', handleVisibility);
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('focus', handleVisibility);
+    };
+  }, [applyCloudData]);
+
+  // ─── Polling fallback every 30 s ───────────────────────────────────
+  // In case visibility/focus events are blocked (some browsers, PWA mode),
+  // quietly re-pull the latest cloud data in the background.
+  useEffect(() => {
+    if (!isCloudEnabled()) return;
+    const id = setInterval(applyCloudData, 30_000);
+    return () => clearInterval(id);
+  }, [applyCloudData]);
 
   const logActivity = useCallback((message: string, type: ActivityEntry['type']) => {
     const entry: ActivityEntry = { id: generateId(), message, type, timestamp: new Date().toISOString() };
