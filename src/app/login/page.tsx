@@ -3,12 +3,15 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
+import { useLang } from '@/contexts/LanguageContext';
+import LangToggle from '@/components/LangToggle';
 import { Eye, EyeOff, Music, Lock, User } from 'lucide-react';
 
 type LoginTab = 'teacher' | 'student';
 
 export default function LoginPage() {
   const { login, session, isLoading } = useAuth();
+  const { t } = useLang();
   const router = useRouter();
 
   const [tab, setTab] = useState<LoginTab>('teacher');
@@ -52,17 +55,17 @@ export default function LoginPage() {
     const credential = tab === 'teacher' ? password : pin.join('');
 
     if (!username.trim()) {
-      setError('Please enter your username.');
+      setError(t('err_username'));
       setSubmitting(false);
       return;
     }
     if (tab === 'teacher' && !password) {
-      setError('Please enter your password.');
+      setError(t('err_password'));
       setSubmitting(false);
       return;
     }
     if (tab === 'student' && credential.length < 4) {
-      setError('Please enter your 4-digit PIN.');
+      setError(t('err_pin'));
       setSubmitting(false);
       return;
     }
@@ -85,7 +88,7 @@ export default function LoginPage() {
       <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
         <div className="text-center">
           <div className="text-4xl font-black tracking-wider gold-gradient-text mb-2">RÜVEL</div>
-          <div className="text-[#888888] text-sm">Loading...</div>
+          <div className="text-[#888888] text-sm">{t('loading')}</div>
         </div>
       </div>
     );
@@ -93,6 +96,11 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center px-4">
+      {/* Language toggle */}
+      <div className="fixed top-4 right-4 z-20">
+        <LangToggle />
+      </div>
+
       {/* Background decoration */}
       <div className="fixed inset-0 overflow-hidden pointer-events-none">
         <div className="absolute -top-32 -left-32 w-96 h-96 rounded-full opacity-5" style={{ background: 'radial-gradient(circle, #C9A84C, transparent)' }} />
@@ -121,7 +129,7 @@ export default function LoginPage() {
                 tab === 'teacher' ? 'bg-[#C9A84C] text-black' : 'text-[#888888] hover:text-white'
               }`}
             >
-              🎓 Teacher
+              🎓 {t('tab_teacher')}
             </button>
             <button
               onClick={() => { setTab('student'); setError(''); setPassword(''); }}
@@ -129,7 +137,7 @@ export default function LoginPage() {
                 tab === 'student' ? 'bg-[#C9A84C] text-black' : 'text-[#888888] hover:text-white'
               }`}
             >
-              🎹 Student
+              🎹 {t('tab_student')}
             </button>
           </div>
 
@@ -137,13 +145,13 @@ export default function LoginPage() {
             {/* Username */}
             <div>
               <label className="block text-xs text-[#888888] mb-2 font-medium">
-                {tab === 'teacher' ? 'Username' : 'Your Name / Username'}
+                {tab === 'teacher' ? t('username_teacher') : t('username_student')}
               </label>
               <div className="relative">
                 <User className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#555555]" />
                 <input
                   type="text"
-                  placeholder={tab === 'teacher' ? 'teacher' : 'e.g. luciana'}
+                  placeholder={tab === 'teacher' ? t('ph_teacher') : t('ph_student')}
                   value={username}
                   onChange={(e) => { setUsername(e.target.value); setError(''); }}
                   className={`${inputCls} pl-10`}
@@ -155,12 +163,12 @@ export default function LoginPage() {
             {/* Password (teacher) */}
             {tab === 'teacher' && (
               <div>
-                <label className="block text-xs text-[#888888] mb-2 font-medium">Password</label>
+                <label className="block text-xs text-[#888888] mb-2 font-medium">{t('password')}</label>
                 <div className="relative">
                   <Lock className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-[#555555]" />
                   <input
                     type={showPassword ? 'text' : 'password'}
-                    placeholder="Password"
+                    placeholder={t('password')}
                     value={password}
                     onChange={(e) => { setPassword(e.target.value); setError(''); }}
                     className={`${inputCls} pl-10 pr-10`}
@@ -180,7 +188,7 @@ export default function LoginPage() {
             {/* PIN (student) */}
             {tab === 'student' && (
               <div>
-                <label className="block text-xs text-[#888888] mb-3 font-medium">4-Digit PIN</label>
+                <label className="block text-xs text-[#888888] mb-3 font-medium">{t('pin_label')}</label>
                 <div className="flex gap-3 justify-center">
                   {pin.map((digit, i) => (
                     <input
@@ -197,7 +205,7 @@ export default function LoginPage() {
                   ))}
                 </div>
                 <p className="text-xs text-[#555555] text-center mt-3">
-                  Forgot PIN? Contact your teacher.
+                  {t('forgot_pin')}
                 </p>
               </div>
             )}
@@ -211,7 +219,7 @@ export default function LoginPage() {
                 onChange={(e) => setRememberMe(e.target.checked)}
                 className="w-4 h-4 rounded border border-[#2a2a2a] bg-[#0d0d0d] accent-[#C9A84C]"
               />
-              <label htmlFor="remember" className="text-xs text-[#888888]">Remember me</label>
+              <label htmlFor="remember" className="text-xs text-[#888888]">{t('remember_me')}</label>
             </div>
 
             {/* Error */}
@@ -227,7 +235,7 @@ export default function LoginPage() {
               disabled={submitting}
               className="w-full py-3.5 bg-[#C9A84C] text-black rounded-xl font-bold text-sm hover:bg-[#d4b56a] disabled:opacity-50 disabled:cursor-not-allowed transition-colors mt-2"
             >
-              {submitting ? 'Signing in...' : tab === 'teacher' ? 'Sign In as Teacher' : 'Enter with PIN'}
+              {submitting ? t('signing_in') : tab === 'teacher' ? t('sign_in_teacher') : t('enter_pin')}
             </button>
           </form>
         </div>
