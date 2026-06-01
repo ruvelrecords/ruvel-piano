@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { Student, ClassEntry, Payment, Review, MediaItem, Settings, ActivityEntry } from '@/lib/types';
-import { getStorage, setStorage } from '@/lib/storage';
+import { getStorage, setStorage, flushPendingPushes } from '@/lib/storage';
 import { RUVEL_KEYS } from '@/lib/constants';
 import { generateId } from '@/lib/utils';
 import { createSeedData } from '@/lib/seedData';
@@ -158,25 +158,35 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  // ─── Re-sync on visibility change (mobile-friendly) ────────────────
-  // `window.focus` doesn't fire reliably on iOS Safari/Chrome.
-  // `document.visibilitychange` fires every time the user returns to the tab.
+  // ─── Visibility / focus event handlers ────────────────────────────
+  // One consolidated visibilitychange listener handles both cases:
+  //   hidden  → flush any pending pushes before iOS/Android kills the tab
+  //   visible → pull latest cloud data when user returns to the app
+  // Also listen to window.focus as belt-and-suspenders for desktop browsers.
+  // pagehide fires even when iOS hard-suspends a tab (beforeunload doesn't).
   useEffect(() => {
     if (!isCloudEnabled()) return;
 
     const handleVisibility = () => {
-      if (document.visibilityState === 'visible') {
+      if (document.visibilityState === 'hidden') {
+        flushPendingPushes().catch(() => { /* silent */ });
+      } else if (document.visibilityState === 'visible') {
         applyCloudData();
       }
     };
 
-    // Also keep window.focus as belt-and-suspenders for desktop browsers
+    const handlePageHide = () => {
+      flushPendingPushes().catch(() => { /* silent */ });
+    };
+
     document.addEventListener('visibilitychange', handleVisibility);
-    window.addEventListener('focus', handleVisibility);
+    window.addEventListener('focus', applyCloudData);
+    window.addEventListener('pagehide', handlePageHide);
 
     return () => {
       document.removeEventListener('visibilitychange', handleVisibility);
-      window.removeEventListener('focus', handleVisibility);
+      window.removeEventListener('focus', applyCloudData);
+      window.removeEventListener('pagehide', handlePageHide);
     };
   }, [applyCloudData]);
 
