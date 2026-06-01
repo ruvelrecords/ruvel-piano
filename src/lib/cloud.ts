@@ -212,20 +212,39 @@ export async function cloudForcePull(): Promise<Record<string, unknown>> {
   return mergeCloudIntoLocal(rows, true);
 }
 
-// Test the connection and return diagnostic info.
+// Test the connection (READ + WRITE) and return diagnostic info.
 export async function cloudTest(): Promise<{ ok: boolean; rowCount: number; error?: string; studentCount?: number }> {
   if (!isCloudEnabled()) return { ok: false, rowCount: 0, error: 'Cloud not configured' };
   try {
+    // ── READ test ──
     const res = await supabaseFetch('/rest/v1/app_kv?select=key,value');
-    if (!res) return { ok: false, rowCount: 0, error: 'Network error — no response' };
+    if (!res) return { ok: false, rowCount: 0, error: 'Sin respuesta (red/CORS)' };
     if (!res.ok) {
       let body = '';
       try { body = await res.text(); } catch { /* ignore */ }
-      return { ok: false, rowCount: 0, error: `HTTP ${res.status}: ${body.slice(0, 120)}` };
+      return { ok: false, rowCount: 0, error: `LECTURA HTTP ${res.status}: ${body.slice(0, 140)}` };
     }
     const rows: Array<{ key: string; value: unknown }> = await res.json();
     const studentsRow = rows.find(r => r.key === 'students');
     const studentCount = studentsRow ? (studentsRow.value as unknown[])?.length ?? 0 : 0;
+
+    // ── WRITE test ── (upsert a harmless probe row)
+    const wres = await supabaseFetch('/rest/v1/app_kv', {
+      method: 'POST',
+      headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify({ key: '__conn_test', value: { t: Date.now() }, updated_at: new Date().toISOString() }),
+    });
+    if (!wres || !wres.ok) {
+      let body = '';
+      try { if (wres) body = await wres.text(); } catch { /* ignore */ }
+      return {
+        ok: false,
+        rowCount: rows.length,
+        studentCount,
+        error: `ESCRITURA bloqueada HTTP ${wres?.status ?? '???'}: ${body.slice(0, 160)}`,
+      };
+    }
+
     return { ok: true, rowCount: rows.length, studentCount };
   } catch (e) {
     return { ok: false, rowCount: 0, error: String(e) };
