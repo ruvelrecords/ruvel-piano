@@ -1,4 +1,4 @@
-import { cloudPush, isCloudEnabled, SYNCED_KEYS } from './cloud';
+import { cloudPush, isCloudEnabled, SYNCED_KEYS, setLocalTs } from './cloud';
 
 const PREFIX = 'ruvel_';
 
@@ -15,7 +15,7 @@ export function getStorage<T>(key: string, fallback: T): T {
 // Debounced cloud-push timers per key — evita spammar Supabase con cada teclazo
 const pushTimers: Record<string, ReturnType<typeof setTimeout>> = {};
 // Pending values waiting for their debounce timer to fire
-const pendingPushes: Record<string, unknown> = {};
+const pendingPushes: Record<string, { value: unknown; ts: string }> = {};
 const PUSH_DEBOUNCE_MS = 200; // 200ms — fast enough to catch page-hide, slow enough to batch keystrokes
 
 export function setStorage<T>(key: string, value: T): void {
@@ -28,11 +28,15 @@ export function setStorage<T>(key: string, value: T): void {
 
   // También empujar a la nube si está configurada y la key se sincroniza
   if (isCloudEnabled() && SYNCED_KEYS.includes(key)) {
-    pendingPushes[key] = value; // track what's pending
+    // Stamp the local timestamp NOW so last-write-wins knows this device has
+    // the freshest copy. Push with the same timestamp to keep cloud in sync.
+    const ts = new Date().toISOString();
+    setLocalTs(key, ts);
+    pendingPushes[key] = { value, ts }; // track what's pending
     if (pushTimers[key]) clearTimeout(pushTimers[key]);
     pushTimers[key] = setTimeout(() => {
       delete pendingPushes[key];
-      cloudPush(key, value).catch(() => {
+      cloudPush(key, value, ts).catch(() => {
         /* silent */
       });
     }, PUSH_DEBOUNCE_MS);
@@ -52,9 +56,9 @@ export async function flushPendingPushes(): Promise<void> {
   }
   // Fire all pushes in parallel
   await Promise.allSettled(
-    entries.map(([key, value]) => {
+    entries.map(([key, { value, ts }]) => {
       delete pendingPushes[key];
-      return cloudPush(key, value);
+      return cloudPush(key, value, ts);
     })
   );
 }

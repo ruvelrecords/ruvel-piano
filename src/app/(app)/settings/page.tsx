@@ -7,7 +7,7 @@ import { Settings, Download, Upload, AlertTriangle, Save, RefreshCw, Lock, Users
 import Modal from '@/components/ui/Modal';
 import { useToast } from '@/contexts/ToastContext';
 import { AuthStore } from '@/lib/types';
-import { isCloudEnabled, cloudResync, cloudPushAll, cloudTest } from '@/lib/cloud';
+import { isCloudEnabled, cloudForcePull, cloudPushAll, cloudTest } from '@/lib/cloud';
 
 const DEFAULT_AUTH: AuthStore = { teacher: { username: 'teacher', password: 'ruvel2024' } };
 
@@ -182,7 +182,7 @@ export default function SettingsPage() {
                 onClick={async () => {
                   setSyncing(true);
                   try {
-                    const cloud = await cloudResync();
+                    const cloud = await cloudForcePull();
                     const pulled = Object.keys(cloud).length;
                     if (pulled === 0) {
                       showToast('La nube está vacía — no hay datos para bajar', 'error');
