@@ -13,9 +13,14 @@
 //
 // Sin las env vars la app funciona normal con solo localStorage (modo offline).
 
-// Trim any accidental trailing slash the user may have pasted
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/\/$/, '');
-const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim();
+// Sanitizar la URL: quitar espacios/saltos de línea, slashes finales, y un
+// "/rest/v1" pegado por error. Resultado esperado: https://xxxx.supabase.co
+const SUPABASE_URL = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? '')
+  .trim()
+  .replace(/\s+/g, '')
+  .replace(/\/+$/, '')
+  .replace(/\/rest\/v1$/, '');
+const SUPABASE_KEY = (process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? '').trim().replace(/\s+/g, '');
 
 // Keys de localStorage que se sincronizan con la nube
 export const SYNCED_KEYS = [
@@ -222,7 +227,7 @@ export async function cloudTest(): Promise<{ ok: boolean; rowCount: number; erro
     if (!res.ok) {
       let body = '';
       try { body = await res.text(); } catch { /* ignore */ }
-      return { ok: false, rowCount: 0, error: `LECTURA HTTP ${res.status}: ${body.slice(0, 140)}` };
+      return { ok: false, rowCount: 0, error: `LECTURA HTTP ${res.status} @ ${SUPABASE_URL}/rest/v1/app_kv — ${body.slice(0, 120)}` };
     }
     const rows: Array<{ key: string; value: unknown }> = await res.json();
     const studentsRow = rows.find(r => r.key === 'students');
