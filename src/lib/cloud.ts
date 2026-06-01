@@ -13,8 +13,9 @@
 //
 // Sin las env vars la app funciona normal con solo localStorage (modo offline).
 
-const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+// Trim any accidental trailing slash the user may have pasted
+const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL?.replace(/\/$/, '');
+const SUPABASE_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.trim();
 
 // Keys de localStorage que se sincronizan con la nube
 export const SYNCED_KEYS = [
@@ -41,7 +42,7 @@ export function isCloudEnabled(): boolean {
 async function supabaseFetch(path: string, options: RequestInit = {}): Promise<Response | null> {
   if (!isCloudEnabled()) return null;
   try {
-    return await fetch(`${SUPABASE_URL}${path}`, {
+    const res = await fetch(`${SUPABASE_URL}${path}`, {
       ...options,
       headers: {
         apikey: SUPABASE_KEY!,
@@ -50,8 +51,15 @@ async function supabaseFetch(path: string, options: RequestInit = {}): Promise<R
         ...(options.headers || {}),
       },
     });
+    if (!res.ok) {
+      // Log the actual Supabase error so we can debug
+      let body = '';
+      try { body = await res.clone().text(); } catch { /* ignore */ }
+      console.error(`[cloud] ${options.method ?? 'GET'} ${path} → ${res.status}`, body);
+    }
+    return res;
   } catch (e) {
-    console.warn('[cloud] fetch error', e);
+    console.error('[cloud] network error', e);
     return null;
   }
 }
@@ -143,6 +151,26 @@ export async function cloudResync(): Promise<Record<string, unknown>> {
     }
   }
   return cloud;
+}
+
+// Test the connection and return diagnostic info.
+export async function cloudTest(): Promise<{ ok: boolean; rowCount: number; error?: string; studentCount?: number }> {
+  if (!isCloudEnabled()) return { ok: false, rowCount: 0, error: 'Cloud not configured' };
+  try {
+    const res = await supabaseFetch('/rest/v1/app_kv?select=key,value');
+    if (!res) return { ok: false, rowCount: 0, error: 'Network error — no response' };
+    if (!res.ok) {
+      let body = '';
+      try { body = await res.text(); } catch { /* ignore */ }
+      return { ok: false, rowCount: 0, error: `HTTP ${res.status}: ${body.slice(0, 120)}` };
+    }
+    const rows: Array<{ key: string; value: unknown }> = await res.json();
+    const studentsRow = rows.find(r => r.key === 'students');
+    const studentCount = studentsRow ? (studentsRow.value as unknown[])?.length ?? 0 : 0;
+    return { ok: true, rowCount: rows.length, studentCount };
+  } catch (e) {
+    return { ok: false, rowCount: 0, error: String(e) };
+  }
 }
 
 // Push ALL local synced keys to the cloud at once.

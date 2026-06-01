@@ -7,7 +7,7 @@ import { Settings, Download, Upload, AlertTriangle, Save, RefreshCw, Lock, Users
 import Modal from '@/components/ui/Modal';
 import { useToast } from '@/contexts/ToastContext';
 import { AuthStore } from '@/lib/types';
-import { isCloudEnabled, cloudResync, cloudPushAll } from '@/lib/cloud';
+import { isCloudEnabled, cloudResync, cloudPushAll, cloudTest } from '@/lib/cloud';
 
 const DEFAULT_AUTH: AuthStore = { teacher: { username: 'teacher', password: 'ruvel2024' } };
 
@@ -26,6 +26,9 @@ export default function SettingsPage() {
   const [resetModal, setResetModal] = useState(false);
   const [resetConfirmText, setResetConfirmText] = useState('');
   const [syncing, setSyncing] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; rowCount: number; studentCount?: number; error?: string } | null>(null);
+  const [testing, setTesting] = useState(false);
   // Auth state
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -137,44 +140,97 @@ export default function SettingsPage() {
           Sincronización entre dispositivos
         </h2>
         {isCloudEnabled() ? (
-          <div>
-            <div className="flex items-center gap-2 mb-2">
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              <p className="text-sm text-emerald-300 font-medium">☁️ Activa</p>
+              <p className="text-sm text-emerald-300 font-medium">☁️ Configurada</p>
+              <span className="text-xs text-[#555] font-mono ml-1">
+                {process.env.NEXT_PUBLIC_SUPABASE_URL?.replace('https://', '').split('.')[0] ?? '—'}.supabase.co
+              </span>
             </div>
-            <p className="text-xs text-[#888] mb-1">
-              Tus dispositivos se sincronizan automáticamente cada 30 segundos y al volver a la pestaña.
+
+            {/* Test result */}
+            {testResult && (
+              <div className={`p-3 rounded-lg text-xs border ${testResult.ok ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300' : 'bg-red-500/10 border-red-500/30 text-red-400'}`}>
+                {testResult.ok
+                  ? `✓ Conexión OK — ${testResult.rowCount} claves en la nube, ${testResult.studentCount ?? 0} estudiantes guardados`
+                  : `✗ Error: ${testResult.error}`}
+              </div>
+            )}
+
+            {/* Three action buttons */}
+            <div className="flex flex-col gap-2">
+              {/* TEST — verifies the connection actually works */}
+              <button
+                disabled={testing}
+                onClick={async () => {
+                  setTesting(true);
+                  setTestResult(null);
+                  const result = await cloudTest();
+                  setTestResult(result);
+                  setTesting(false);
+                }}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium bg-[#1a1a1a] border border-[#2a2a2a] text-white hover:border-[#C9A84C]/40 disabled:opacity-50 transition-colors"
+              >
+                <Cloud className={`w-3.5 h-3.5 ${testing ? 'animate-pulse' : ''}`} />
+                {testing ? 'Probando…' : '1. Probar conexión'}
+              </button>
+
+              {/* PULL — download latest from cloud (USE THIS ON THE RECEIVING DEVICE) */}
+              <button
+                disabled={syncing}
+                onClick={async () => {
+                  setSyncing(true);
+                  try {
+                    const cloud = await cloudResync();
+                    const pulled = Object.keys(cloud).length;
+                    if (pulled === 0) {
+                      showToast('La nube está vacía — no hay datos para bajar', 'error');
+                    } else {
+                      showToast(`✓ Bajados ${pulled} claves de la nube — recargando…`, 'success');
+                      setTimeout(() => window.location.reload(), 800);
+                    }
+                  } catch {
+                    showToast('Error al bajar datos', 'error');
+                  } finally {
+                    setSyncing(false);
+                  }
+                }}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium bg-[#1a1a1a] border border-[#2a2a2a] text-white hover:border-[#3a3a3a] disabled:opacity-50 transition-colors"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
+                {syncing ? 'Bajando…' : '2. Bajar datos de la nube → este dispositivo'}
+              </button>
+
+              {/* PUSH — upload this device's data to cloud (USE THIS ON THE SOURCE DEVICE) */}
+              <button
+                disabled={uploading}
+                onClick={async () => {
+                  setUploading(true);
+                  try {
+                    const pushed = await cloudPushAll();
+                    if (pushed === 0) {
+                      showToast('No se pudo subir nada — revisa tu conexión', 'error');
+                    } else {
+                      showToast(`✓ Subidas ${pushed} claves a la nube`, 'success');
+                    }
+                  } catch {
+                    showToast('Error al subir datos', 'error');
+                  } finally {
+                    setUploading(false);
+                  }
+                }}
+                className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-medium bg-[#1a2a1a] border border-emerald-800/40 text-emerald-400 hover:border-emerald-700/60 disabled:opacity-50 transition-colors"
+              >
+                <Upload className={`w-3.5 h-3.5 ${uploading ? 'animate-pulse' : ''}`} />
+                {uploading ? 'Subiendo…' : '3. Subir datos de este dispositivo → nube'}
+              </button>
+            </div>
+
+            <p className="text-[10px] text-[#555] leading-relaxed">
+              Flujo normal: los cambios se sincronizan solos cada 30 s y al cambiar de pestaña.<br />
+              ¿No funciona? Usa el botón 3 en el dispositivo con los datos nuevos, luego el botón 2 en el otro.
             </p>
-            <p className="text-xs text-[#555] mb-3 font-mono">
-              {process.env.NEXT_PUBLIC_SUPABASE_URL?.replace('https://', '').split('.')[0] ?? '—'}
-              .supabase.co
-            </p>
-            <button
-              disabled={syncing}
-              onClick={async () => {
-                setSyncing(true);
-                try {
-                  // PUSH all local data first (in case any push was missed),
-                  // then PULL the latest from the cloud.
-                  const pushed = await cloudPushAll();
-                  const cloud = await cloudResync();
-                  const pulled = Object.keys(cloud).length;
-                  showToast(
-                    `Sincronizado ✓ — subidas ${pushed} claves, bajadas ${pulled}`,
-                    'success'
-                  );
-                } catch {
-                  showToast('Error al sincronizar — revisa tu conexión', 'error');
-                } finally {
-                  setSyncing(false);
-                  setTimeout(() => window.location.reload(), 800);
-                }
-              }}
-              className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium bg-[#1a1a1a] border border-[#2a2a2a] text-white hover:border-[#3a3a3a] disabled:opacity-50"
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
-              {syncing ? 'Sincronizando…' : 'Forzar sincronización ahora'}
-            </button>
           </div>
         ) : (
           <div>
